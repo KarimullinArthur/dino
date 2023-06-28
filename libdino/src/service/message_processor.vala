@@ -60,7 +60,6 @@ public class MessageProcessor : StreamInteractionModule, Object {
     }
 
     public Entities.Message send_message(Entities.Message message, Conversation conversation) {
-        stream_interactor.get_module(MessageStorage.IDENTITY).add_message(message, conversation);
         stream_interactor.get_module(ContentItemStore.IDENTITY).insert_message(message, conversation);
         send_xmpp_message(message, conversation);
         message_sent(message, conversation);
@@ -145,9 +144,13 @@ public class MessageProcessor : StreamInteractionModule, Object {
             }
         });
         stream_interactor.module_manager.get_module(account, Xmpp.MessageModule.IDENTITY).received_error.connect((stream, message_stanza, error_stanza) => {
-            Conversation? conversation = stream_interactor.get_module(ConversationManager.IDENTITY).get_conversation(message_stanza.from.bare_jid, account);
-            if (conversation == null) return;
-            Message? message = stream_interactor.get_module(MessageStorage.IDENTITY).get_message_by_stanza_id(message_stanza.id, conversation);
+            Message? message = null;
+
+            Gee.List<Conversation> conversations = stream_interactor.get_module(ConversationManager.IDENTITY).get_conversations(message_stanza.from, account);
+            foreach (Conversation conversation in conversations) {
+                message = stream_interactor.get_module(MessageStorage.IDENTITY).get_message_by_stanza_id(message_stanza.id, conversation);
+                if (message != null) break;
+            }
             if (message == null) return;
             // We don't care about delivery errors if our counterpart already ACKed the message.
             if (message.marked in Message.MARKED_RECEIVED) return;
@@ -575,7 +578,7 @@ public class MessageProcessor : StreamInteractionModule, Object {
 
     private class StoreContentItemListener : MessageListener {
 
-        public string[] after_actions_const = new string[]{ "DEDUPLICATE", "DECRYPT", "FILTER_EMPTY", "STORE", "CORRECTION" };
+        public string[] after_actions_const = new string[]{ "DEDUPLICATE", "DECRYPT", "FILTER_EMPTY", "STORE", "CORRECTION", "MESSAGE_REINTERPRETING" };
         public override string action_group { get { return "STORE_CONTENT_ITEM"; } }
         public override string[] after_actions { get { return after_actions_const; } }
 
@@ -634,6 +637,9 @@ public class MessageProcessor : StreamInteractionModule, Object {
         }
         message.marked = Entities.Message.Marked.UNSENT;
         message.encryption = conversation.encryption;
+
+        stream_interactor.get_module(MessageStorage.IDENTITY).add_message(message, conversation);
+
         return message;
     }
 

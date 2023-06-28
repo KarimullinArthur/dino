@@ -198,16 +198,14 @@ public class MessageItemWidget : SizeRequestBin {
         }
 
         if (conversation.type_ == Conversation.Type.GROUPCHAT) {
-            markup_text = Util.parse_add_markup(markup_text, conversation.nickname, true, true);
+            markup_text = Util.parse_add_markup_theme(markup_text, conversation.nickname, true, true, true, Util.is_dark_theme(this), ref theme_dependent);
         } else {
-            markup_text = Util.parse_add_markup(markup_text, null, true, true);
+            markup_text = Util.parse_add_markup_theme(markup_text, null, true, true, true, Util.is_dark_theme(this), ref theme_dependent);
         }
 
         if (message.body.has_prefix("/me ")) {
             string display_name = Util.get_participant_display_name(stream_interactor, conversation, message.from);
-            string color = Util.get_name_hex_color(stream_interactor, conversation.account, message.real_jid ?? message.from, Util.is_dark_theme(label));
-            markup_text = @"<span color=\"#$(color)\">$(Markup.escape_text(display_name))</span> " + markup_text;
-            theme_dependent = true;
+            markup_text = @"<i><b>$(Markup.escape_text(display_name))</b> " + markup_text + "</i>";
         }
 
         int only_emoji_count = Util.get_only_emoji_count(markup_text);
@@ -216,10 +214,10 @@ public class MessageItemWidget : SizeRequestBin {
             markup_text = @"<span size=\'$size_str\'>" + markup_text + "</span>";
         }
 
-        string gray_color = Util.rgba_to_hex(Util.get_label_pango_class_color(label, "dim-label"));
+        string dim_color = Util.is_dark_theme(this) ? "#BDBDBD" : "#707070";
 
         if (message.edit_to != null) {
-            markup_text += "  <span size='small' color='%s'>(%s)</span>".printf(gray_color, _("edited"));
+            markup_text += @"  <span size='small' color='$dim_color'>(%s)</span>".printf(_("edited"));
             theme_dependent = true;
         }
 
@@ -228,7 +226,7 @@ public class MessageItemWidget : SizeRequestBin {
         if (message.direction == Message.DIRECTION_SENT && (message.marked == Message.Marked.SENDING || message.marked == Message.Marked.UNSENT)) {
             // Append "pending..." iff message has not been sent yet
             if (message.time.compare(new DateTime.now_utc().add_seconds(-10)) < 0) {
-                markup_text += "  <span size='small' color='%s'>%s</span>".printf(gray_color, _("pending…"));
+                markup_text += @"  <span size='small' color='$dim_color'>%s</span>".printf(_("pending…"));
                 theme_dependent = true;
                 additional_info = AdditionalInfo.PENDING;
             } else {
@@ -271,11 +269,11 @@ public class MessageItemEditMode : Box {
     public signal void cancelled();
     public signal void send();
 
-    [GtkChild] public MenuButton emoji_button;
-    [GtkChild] public ChatTextView chat_text_view;
-    [GtkChild] public Button cancel_button;
-    [GtkChild] public Button send_button;
-    [GtkChild] public Frame frame;
+    [GtkChild] public unowned MenuButton emoji_button;
+    [GtkChild] public unowned ChatTextView chat_text_view;
+    [GtkChild] public unowned Button cancel_button;
+    [GtkChild] public unowned Button send_button;
+    [GtkChild] public unowned Frame frame;
 
     construct {
         Util.force_css(frame, "* { border-radius: 3px; }");

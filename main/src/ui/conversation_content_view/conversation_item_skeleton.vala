@@ -113,9 +113,8 @@ public class ConversationItemSkeleton : EventBox {
 
 [GtkTemplate (ui = "/im/dino/Dino/conversation_content_view/item_metadata_header.ui")]
 public class ItemMetaDataHeader : Box {
-    [GtkChild] public Label name_label;
-    [GtkChild] public Label dot_label;
-    [GtkChild] public Label time_label;
+    [GtkChild] public unowned Label name_label;
+    [GtkChild] public unowned Label time_label;
     public Image received_image = new Image() { opacity=0.4 };
     public Widget? encryption_image = null;
 
@@ -162,7 +161,7 @@ public class ItemMetaDataHeader : Box {
         Application app = GLib.Application.get_default() as Application;
 
         ContentMetaItem ci = item as ContentMetaItem;
-        if (item.encryption != Encryption.NONE && ci != null) {
+        if (item.encryption != Encryption.NONE && item.encryption != Encryption.UNKNOWN && ci != null) {
             Widget? widget = null;
             foreach(var e in app.plugin_registry.encryption_list_entries) {
                 if (e.encryption == item.encryption) {
@@ -217,9 +216,7 @@ public class ItemMetaDataHeader : Box {
     }
 
     private void update_name_label() {
-        string display_name = Markup.escape_text(Util.get_participant_display_name(stream_interactor, conversation, item.jid));
-        string color = Util.get_name_hex_color(stream_interactor, conversation.account, item.jid, Util.is_dark_theme(name_label));
-        name_label.label = @"<span foreground=\"#$color\">$display_name</span>";
+        name_label.label = Util.get_participant_display_name(stream_interactor, conversation, item.jid);
     }
 
     private void update_received_mark() {

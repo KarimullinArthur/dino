@@ -17,16 +17,16 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
     private HashMap<uint32, HashMap<string, ListenerFuncWrapper>> action_listeners = new HashMap<uint32, HashMap<string, ListenerFuncWrapper>>();
     private HashMap<Call, uint32> call_notifications = new HashMap<Call, uint32>(Call.hash_func, Call.equals_func);
 
-    private FreeDesktopNotifier(StreamInteractor stream_interactor) {
+    public FreeDesktopNotifier(StreamInteractor stream_interactor, DBusNotifications dbus_notifications) {
         this.stream_interactor = stream_interactor;
-
-    }
-
-    private void set_dbus_notifications(DBusNotifications dbus_notifications) throws Error {
         this.dbus_notifications = dbus_notifications;
 
+        init_dbus_notifications.begin();
+    }
+
+    private async void init_dbus_notifications() throws Error {
         string[] caps;
-        dbus_notifications.get_capabilities(out caps);
+        yield dbus_notifications.get_capabilities(out caps);
         foreach (string cap in caps) {
             switch (cap) {
                 case "body-markup":
@@ -47,21 +47,6 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         dbus_notifications.notification_closed.connect((id) => {
             action_listeners.unset(id);
         });
-    }
-
-    public static FreeDesktopNotifier? try_create(StreamInteractor stream_interactor) {
-        DBusNotifications? dbus_notifications = get_notifications_dbus();
-        if (dbus_notifications == null) return null;
-
-        try {
-            FreeDesktopNotifier notifier = new FreeDesktopNotifier(stream_interactor);
-            notifier.set_dbus_notifications(dbus_notifications);
-            return notifier;
-        } catch (Error e) {
-            debug("Failed accessing fdo notification server: %s", e.message);
-        }
-
-        return null;
     }
 
     public double get_priority() {
@@ -111,7 +96,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         hash_table["desktop-entry"] = new Variant.string(Dino.Application.get_default().get_application_id());
         string[] actions = new string[] {"default", "Open conversation"};
         try {
-            uint32 notification_id = dbus_notifications.notify("Dino", replace_id, "", conversation_display_name, body, actions, hash_table, -1);
+            uint32 notification_id = yield dbus_notifications.notify("Dino", replace_id, "", conversation_display_name, body, actions, hash_table, -1);
             content_notifications[conversation] = notification_id;
 
             add_action_listener(notification_id, "default", () => {
@@ -122,9 +107,13 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         }
     }
 
-    public async void notify_call(Call call, Conversation conversation, bool video, string conversation_display_name) {
+    public async void notify_call(Call call, Conversation conversation, bool video, bool multiparty, string conversation_display_name) {
+        debug("[%s] Call notification", call.account.bare_jid.to_string());
         string summary = Markup.escape_text(conversation_display_name);
         string body =  video ? _("Incoming video call") : _("Incoming call");
+        if (multiparty) {
+            body = video ? _("Incoming video group call") : _("Incoming group call");
+        }
 
         HashTable<string, Variant> hash_table = new HashTable<string, Variant>(null, null);
         hash_table["image-path"] = "call-start-symbolic";
@@ -133,17 +122,19 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         hash_table["desktop-entry"] = new Variant.string(Dino.Application.get_default().get_application_id());
         string[] actions = new string[] {"default", "Open conversation", "reject", _("Reject"), "accept", _("Accept")};
         try {
-            uint32 notification_id = dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, 0);
+            uint32 notification_id = yield dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, 0);
             call_notifications[call] = notification_id;
 
             add_action_listener(notification_id, "default", () => {
                 GLib.Application.get_default().activate_action("open-conversation", new Variant.int32(conversation.id));
             });
             add_action_listener(notification_id, "reject", () => {
-                GLib.Application.get_default().activate_action("deny-call", new Variant.int32(call.id));
+                var variant = new Variant.tuple(new Variant[] {new Variant.int32(conversation.id), new Variant.int32(call.id)});
+                GLib.Application.get_default().activate_action("reject-call", variant);
             });
             add_action_listener(notification_id, "accept", () => {
-                GLib.Application.get_default().activate_action("accept-call", new Variant.int32(call.id));
+                var variant = new Variant.tuple(new Variant[] {new Variant.int32(conversation.id), new Variant.int32(call.id)});
+                GLib.Application.get_default().activate_action("accept-call", variant);
             });
         } catch (Error e) {
             warning("Failed showing subscription request notification: %s", e.message);
@@ -154,7 +145,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         if (!call_notifications.has_key(call)) return;
         uint32 notification_id = call_notifications[call];
         try {
-            dbus_notifications.close_notification(notification_id);
+            yield dbus_notifications.close_notification(notification_id);
             action_listeners.unset(notification_id);
             call_notifications.unset(call);
         } catch (Error e) { }
@@ -169,7 +160,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         hash_table["desktop-entry"] = new Variant.string(Dino.Application.get_default().get_application_id());
         string[] actions = new string[] {"default", "Open conversation", "accept", _("Accept"), "deny", _("Deny")};
         try {
-            uint32 notification_id = dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
+            uint32 notification_id = yield dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
 
             if (!conversation_notifications.has_key(conversation)) {
                 conversation_notifications[conversation] = new ArrayList<uint32>();
@@ -200,12 +191,14 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
             case ConnectionManager.ConnectionError.Source.TLS:
                 body = _("Invalid TLS certificate");
                 break;
+            default:
+                break;
         }
 
         HashTable<string, Variant> hash_table = new HashTable<string, Variant>(null, null);
         hash_table["desktop-entry"] = new Variant.string(Dino.Application.get_default().get_application_id());
         try {
-            dbus_notifications.notify("Dino", 0, "im.dino.Dino", summary, body, new string[]{}, hash_table, -1);
+            yield dbus_notifications.notify("Dino", 0, "im.dino.Dino", summary, body, new string[]{}, hash_table, -1);
         } catch (Error e) {
             warning("Failed showing connection error notification: %s", e.message);
         }
@@ -227,7 +220,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         string[] actions = new string[] {"default", "", "reject", _("Reject"), "accept", _("Accept")};
 
         try {
-            uint32 notification_id = dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
+            uint32 notification_id = yield dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
 
             Conversation group_conversation = stream_interactor.get_module(ConversationManager.IDENTITY).create_conversation(room_jid, account, Conversation.Type.GROUPCHAT);
             add_action_listener(notification_id, "default", () => {
@@ -260,7 +253,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         string[] actions = new string[] {"deny", _("Deny"), "accept", _("Accept")};
 
         try {
-            uint32 notification_id = dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
+            uint32 notification_id = yield dbus_notifications.notify("Dino", 0, "", summary, body, actions, hash_table, -1);
 
             add_action_listener(notification_id, "accept", () => {
                 GLib.Application.get_default().activate_action("accept-voice-request", new Variant.int32(conversation.id));
@@ -277,7 +270,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
         if (content_notifications != null) {
             foreach (uint32 id in content_notifications.values) {
                 try {
-                    dbus_notifications.close_notification(id);
+                    dbus_notifications.close_notification.begin(id);
                 } catch (Error e) { }
             }
             content_notifications.clear();
@@ -287,7 +280,7 @@ public class Dino.Ui.FreeDesktopNotifier : NotificationProvider, Object {
     public async void retract_conversation_notifications(Conversation conversation) {
         if (content_notifications.has_key(conversation)) {
             try {
-                dbus_notifications.close_notification(content_notifications[conversation]);
+                dbus_notifications.close_notification.begin(content_notifications[conversation]);
             } catch (Error e) { }
         }
         content_notifications.unset(conversation);

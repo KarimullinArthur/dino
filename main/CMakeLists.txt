@@ -5,8 +5,6 @@ gettext_compile(${GETTEXT_PACKAGE} SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/po TAR
 
 find_packages(MAIN_PACKAGES REQUIRED
     Gee
-    Gst
-    GstVideo
     GLib
     GModule
     GObject
@@ -17,6 +15,7 @@ find_packages(MAIN_PACKAGES REQUIRED
 )
 
 set(RESOURCE_LIST
+    icons/dino-account-plus-symbolic.svg
     icons/dino-changes-allowed-symbolic.svg
     icons/dino-changes-prevent-symbolic.svg
     icons/dino-conversation-list-placeholder-arrow.svg
@@ -140,9 +139,11 @@ SOURCES
 
     src/ui/call_window/audio_settings_popover.vala
     src/ui/call_window/call_bottom_bar.vala
+    src/ui/call_window/call_connection_details_window.vala
     src/ui/call_window/call_encryption_button.vala
     src/ui/call_window/call_window.vala
     src/ui/call_window/call_window_controller.vala
+    src/ui/call_window/participant_widget.vala
     src/ui/call_window/video_settings_popover.vala
 
     src/ui/chat_input/chat_input_controller.vala
@@ -212,7 +213,7 @@ OPTIONS
     ${MAIN_EXTRA_OPTIONS}
 )
 
-add_definitions(${VALA_CFLAGS} -DGETTEXT_PACKAGE=\"${GETTEXT_PACKAGE}\" -DLOCALE_INSTALL_DIR=\"${LOCALE_INSTALL_DIR}\" -DDINO_VERSION=\"${PROJECT_VERSION}\")
+add_definitions(${VALA_CFLAGS} -DGETTEXT_PACKAGE=\"${GETTEXT_PACKAGE}\" -DLOCALE_INSTALL_DIR=\"${LOCALE_INSTALL_DIR}\")
 add_executable(dino ${MAIN_VALA_C} ${MAIN_GRESOURCES_TARGET} src/emojichooser.c)
 add_dependencies(dino ${GETTEXT_PACKAGE}-translations)
 target_include_directories(dino PRIVATE src)
